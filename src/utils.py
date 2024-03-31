@@ -190,7 +190,7 @@ def load_data(dataset, degree_as_tag):
     print('G sym: {}'.format(G_sym))
     print('G rw: {}'.format(G_rw))
 
-    return g_list, len(label_dict), max_norm, G_sym, G_rw
+    return g_list, len(label_dict), max_norm, G_sym, G_rw, max_degree
 
 
 def gen_synthetic_graphs(graph_type='ER',

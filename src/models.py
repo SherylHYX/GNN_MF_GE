@@ -51,6 +51,24 @@ class GCN(nn.Module):
         bound = alpha * M_phi * M_phi * self.G_value * self.G_value /self.num_sample
         return bound
 
+    def Rademacher_mean_pooling_generalization_bound(self, alpha, max_node_degree, delta=0.05):
+        w_m = self.wl.lin.weight.max(dim=1)[0]
+        w_1 = self.conv_layer.lin.weight.norm(dim=1).max()
+        M_l = torch.log(1 + torch.exp(w_m))
+        M_phi = w_m * self.max_feat_norm * np.sqrt(max_node_degree+1) * w_1
+        M_phi = torch.min(M_phi, w_m)
+        bound = 4 * M_phi * torch.sqrt(M_phi*alpha/self.num_sample) + 3 * M_l * np.sqrt(np.log(2/delta)/2/self.num_sample)
+        return bound
+
+    def Rademacher_sum_pooling_generalization_bound(self, alpha, max_node_degree, delta=0.05):
+        w_m = self.wl.lin.weight.max(dim=1)[0]
+        w_1 = self.conv_layer.lin.weight.norm(dim=1).max()
+        M_l = torch.log(1 + torch.exp(w_m))
+        M_phi = w_m * self.max_feat_norm * np.sqrt(max_node_degree+1) * w_1 * self.N_max
+        M_phi = torch.min(M_phi, w_m * self.N_max)
+        bound = 4 * M_phi * torch.sqrt(M_phi*alpha/self.num_sample) + 3 * M_l * np.sqrt(np.log(2/delta)/2/self.num_sample)
+        return bound
+
     def forward(self, x, edge_index, batch, label=None):
         x = self.conv_layer(x, edge_index)
         x = x.tanh()
@@ -103,6 +121,24 @@ class GCN_RW(nn.Module):
         M_phi = w_m * self.max_feat_norm * w_1 * self.N_max
         M_phi = torch.min(M_phi, w_m * self.N_max)
         bound = alpha * M_phi * M_phi * self.G_value * self.G_value /self.num_sample
+        return bound
+
+    def Rademacher_mean_pooling_generalization_bound(self, alpha, max_node_degree, delta=0.05):
+        w_m = self.wl.lin.weight.max(dim=1)[0]
+        w_1 = self.conv_layer.lin.weight.norm(dim=1).max()
+        M_l = torch.log(1 + torch.exp(w_m))
+        M_phi = w_m * self.max_feat_norm * np.sqrt(max_node_degree+1) * w_1
+        M_phi = torch.min(M_phi, w_m)
+        bound = 4 * M_phi * torch.sqrt(M_phi*alpha/self.num_sample) + 3 * M_l * np.sqrt(np.log(2/delta)/2/self.num_sample)
+        return bound
+
+    def Rademacher_sum_pooling_generalization_bound(self, alpha, max_node_degree, delta=0.05):
+        w_m = self.wl.lin.weight.max(dim=1)[0]
+        w_1 = self.conv_layer.lin.weight.norm(dim=1).max()
+        M_l = torch.log(1 + torch.exp(w_m))
+        M_phi = w_m * self.max_feat_norm * np.sqrt(max_node_degree+1) * w_1 * self.N_max
+        M_phi = torch.min(M_phi, w_m * self.N_max)
+        bound = 4 * M_phi * torch.sqrt(M_phi*alpha/self.num_sample) + 3 * M_l * np.sqrt(np.log(2/delta)/2/self.num_sample)
         return bound
 
     def forward(self, x, edge_index, batch, label=None):
@@ -178,6 +214,26 @@ class MPGNN(nn.Module):
         M_phi = w_m * self.max_feat_norm * (w_3 + self.G_value * w_1) * self.N_max
         M_phi= torch.min(M_phi, w_m * self.N_max)
         bound = alpha * M_phi * M_phi/self.num_sample
+        return bound
+
+    def Rademacher_mean_pooling_generalization_bound(self, alpha, max_node_degree, delta=0.05):
+        w_m = self.Wl.max(dim=0)[0]
+        w_3 = self.W2.norm(dim=0).max()
+        w_1 = self.W1.norm(dim=0).max()
+        M_l = torch.log(1 + torch.exp(w_m))
+        M_phi = w_m * self.max_feat_norm * (w_3 + np.sqrt(max_node_degree+1) * w_1)
+        M_phi = torch.min(M_phi, w_m)
+        bound = 4 * M_phi * torch.sqrt(M_phi*alpha/self.num_sample) + 3 * M_l * np.sqrt(np.log(2/delta)/2/self.num_sample)
+        return bound
+
+    def Rademacher_sum_pooling_generalization_bound(self, alpha, max_node_degree, delta=0.05):
+        w_m = self.Wl.max(dim=0)[0]
+        w_3 = self.W2.norm(dim=0).max()
+        w_1 = self.W1.norm(dim=0).max()
+        M_l = torch.log(1 + torch.exp(w_m))
+        M_phi = w_m * self.max_feat_norm * (w_3 + np.sqrt(max_node_degree+1) * w_1) * self.N_max
+        M_phi = torch.min(M_phi, w_m * self.N_max)
+        bound = 4 * M_phi * torch.sqrt(M_phi*alpha/self.num_sample) + 3 * M_l * np.sqrt(np.log(2/delta)/2/self.num_sample)
         return bound
 
     def forward(self, node_feat, Laplacian, label=None, mask=None):
