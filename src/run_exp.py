@@ -8,7 +8,8 @@ import torch
 import torch.optim as optim
 import torch_geometric
 from torch_geometric.utils import from_networkx
-from torch_geometric.data import Data
+from torch_geometric.data import Data, DataLoader
+import pandas as pd
 
 from models import MPGNN, GCN, GCN_RW
 from dataset import GraphData, get_splits
@@ -38,6 +39,8 @@ parser.add_argument(
     '--batch_size', type=int, default=128, help='batch size')
 parser.add_argument(
     '--alpha', type=float, default=100, help='alpha in weight decay and in bounds')
+parser.add_argument(
+    '--delta', type=float, default=0.05, help='(1-delta) is the probability of the Rademacher bound')
 parser.add_argument(
     '--gpu_id', type=int, default=0, help='gpu id')
 parser.add_argument(
@@ -87,7 +90,7 @@ margin = 1
 
 if args.dataset in ['PROTEINS']:
     ### Load real-world data
-    graphs, num_class, max_feat_norm, G_sym, G_rw = load_data(
+    graphs, num_class, max_feat_norm, G_sym, G_rw, max_node_degree = load_data(
         args.dataset, degree_as_tag)
     input_dim = graphs[0].node_feat.shape[1]
     if args.train_ratio == 0.9: # could use default splits
@@ -108,6 +111,23 @@ else:
         input_dim = data['input_dim']
         num_class = data['num_class']
         max_feat_norm = data['max_feat_norm']
+        # then compute max_node_degree
+        max_degree = 0
+        for g in graphs:
+            g.neighbors = [[] for i in range(len(g.g))]
+            for i, j in g.g.edges():
+                g.neighbors[i].append(j)
+                g.neighbors[j].append(i)
+            degree_list = []
+            for i in range(len(g.g)):
+                g.neighbors[i] = g.neighbors[i]
+                degree_list.append(len(g.neighbors[i]))
+            g.max_neighbor = max(degree_list)
+
+            if g.max_neighbor > max_degree:
+                max_degree = g.max_neighbor
+
+            max_node_degree = max_degree
     else:
         print('Generating new data!')
         if args.dataset == 'SBM-1':
@@ -288,15 +308,17 @@ optimizer = optim.SGD(model.parameters(), lr=5.0e-3, momentum=0.9, weight_decay=
 ### Training Loop
 stats = {
     'excess_risk': [],
-    'generalization_error_bound': []
+    'generalization_error_bound': [], # from functional derivative
+    'generalization_error_bound_Rademacher': []
 }
 
-exp_folder = '../AISTATS_exp/{}_{}'.format(args.model_type, args.pooling_method)
+exp_folder = '../exp/{}_{}'.format(args.model_type, args.pooling_method)
 if not os.path.isdir(exp_folder):
     os.makedirs(exp_folder)
 
 excess_risk_list = []
 generalization_bound_list = []
+generalization_bound_Rademacher_list = []
 
 if args.load_only:
     model_snapshot = torch.load(
@@ -324,21 +346,6 @@ if args.load_only:
                             data.label.to(device))
 
             test_logit += [logit.cpu().data.numpy()]
-
-        test_error = np.array(test_logit).mean()
-        excess_risk = test_error - train_error
-        stats['excess_risk'] = excess_risk
-        if args.pooling_method == 'mean':
-            error_bound = model.mean_pooling_generalization_bound(args.alpha).data.cpu().numpy()[0]
-        elif args.pooling_method == 'max':
-            error_bound = 0 # no bound computed for now
-        elif args.pooling_method == 'sum':
-            error_bound = model.sum_pooling_generalization_bound(args.alpha).data.cpu().numpy()[0]
-        stats['generalization_error_bound'] = error_bound
-        logging.info('Load only: Excess Risk: {:.6f}, Generalization Error Bound: {:.6f}.'.format(
-            excess_risk, error_bound))
-        excess_risk_list.append(excess_risk)
-        generalization_bound_list.append(error_bound)
     elif args.model_type == 'MPGNN':
         train_logit = []
         for data in train_loader:
@@ -360,20 +367,25 @@ if args.load_only:
                 
             test_logit += [logit.cpu().data.numpy()]
         
-        test_error = np.array(test_logit).mean()
-        excess_risk = test_error - train_error
-        stats['excess_risk'] = excess_risk
-        if args.pooling_method == 'mean':
-            error_bound = model.mean_pooling_generalization_bound(args.alpha).data.cpu().numpy()[0]
-        elif args.pooling_method == 'max':
-            error_bound = 0 # no bound computed for now
-        elif args.pooling_method == 'sum':
-            error_bound = model.sum_pooling_generalization_bound(args.alpha).data.cpu().numpy()[0]
-        stats['generalization_error_bound'] = error_bound
-        logging.info('Load only: Excess Risk: {:.6f}, Generalization Error Bound: {:.6f}.'.format(
-            excess_risk, error_bound))
-        excess_risk_list.append(excess_risk)
-        generalization_bound_list.append(error_bound)
+    test_error = np.array(test_logit).mean()
+    excess_risk = test_error - train_error
+    stats['excess_risk'] = excess_risk
+    if args.pooling_method == 'mean':
+        error_bound = model.mean_pooling_generalization_bound(args.alpha).data.cpu().numpy()[0]
+        error_bound_Rademacher = model.Rademacher_mean_pooling_generalization_bound(args.alpha, max_node_degree, args.delta).data.cpu().numpy()[0]
+    elif args.pooling_method == 'max':
+        error_bound = 0 # no bound computed for now
+        error_bound_Rademacher = 0
+    elif args.pooling_method == 'sum':
+        error_bound = model.sum_pooling_generalization_bound(args.alpha).data.cpu().numpy()[0]
+        error_bound_Rademacher = model.Rademacher_sum_pooling_generalization_bound(args.alpha, max_node_degree, args.delta).data.cpu().numpy()[0]
+    stats['generalization_error_bound'] = error_bound
+    stats['generalization_error_bound_Rademacher'] = error_bound_Rademacher
+    logging.info('Load only: Excess Risk: {:.6f}, Generalization Error Bound: {:.6f}, Generalization Error Bound (Rademacher): {:.6f}.'.format(
+        excess_risk, error_bound, error_bound_Rademacher))
+    excess_risk_list.append(excess_risk)
+    generalization_bound_list.append(error_bound)
+    generalization_bound_Rademacher_list.append(error_bound_Rademacher)
 else:
     for epoch in range(args.max_epoch):  # loop over the dataset multiple times
         if args.model_type[:3] == 'GCN':
@@ -397,21 +409,6 @@ else:
                                     data.label.to(device))
 
                     test_logit += [logit.cpu().data.numpy()]
-
-                test_error = np.array(test_logit).mean()
-                excess_risk = test_error - train_error
-                stats['excess_risk'] = excess_risk
-                if args.pooling_method == 'mean':
-                    error_bound = model.mean_pooling_generalization_bound(args.alpha).data.cpu().numpy()[0]
-                elif args.pooling_method == 'max':
-                    error_bound = 0 # no bound computed for now
-                elif args.pooling_method == 'sum':
-                    error_bound = model.sum_pooling_generalization_bound(args.alpha).data.cpu().numpy()[0]
-                stats['generalization_error_bound'] = error_bound
-                logging.info('Epoch: {:07d}, Excess Risk: {:.6f}, Generalization Error Bound: {:.6f}.'.format(
-                    epoch+1, excess_risk, error_bound))
-                excess_risk_list.append(excess_risk)
-                generalization_bound_list.append(error_bound)
         elif args.model_type == 'MPGNN':
             if (epoch+1) % 10 == 0:
                 train_logit = []
@@ -434,20 +431,25 @@ else:
                         
                     test_logit += [logit.cpu().data.numpy()]
                 
-                test_error = np.array(test_logit).mean()
-                excess_risk = test_error - train_error
-                stats['excess_risk'] = excess_risk
-                if args.pooling_method == 'mean':
-                    error_bound = model.mean_pooling_generalization_bound(args.alpha).data.cpu().numpy()[0]
-                elif args.pooling_method == 'max':
-                    error_bound = 0 # no bound computed for now
-                elif args.pooling_method == 'sum':
-                    error_bound = model.sum_pooling_generalization_bound(args.alpha).data.cpu().numpy()[0]
-                stats['generalization_error_bound'] = error_bound
-                logging.info('Epoch: {:07d}, Excess Risk: {:.6f}, Generalization Error Bound: {:.6f}.'.format(
-                    epoch+1, excess_risk, error_bound))
-                excess_risk_list.append(excess_risk)
-                generalization_bound_list.append(error_bound)
+            test_error = np.array(test_logit).mean()
+            excess_risk = test_error - train_error
+            stats['excess_risk'] = excess_risk
+            if args.pooling_method == 'mean':
+                error_bound = model.mean_pooling_generalization_bound(args.alpha).data.cpu().numpy()[0]
+                error_bound_Rademacher = model.Rademacher_mean_pooling_generalization_bound(args.alpha, max_node_degree, args.delta).data.cpu().numpy()[0]
+            elif args.pooling_method == 'max':
+                error_bound = 0 # no bound computed for now
+                error_bound_Rademacher = 0 # no bound computed for now
+            elif args.pooling_method == 'sum':
+                error_bound = model.sum_pooling_generalization_bound(args.alpha).data.cpu().numpy()[0]
+                error_bound_Rademacher = model.Rademacher_sum_pooling_generalization_bound(args.alpha, max_node_degree, args.delta).data.cpu().numpy()[0]
+            stats['generalization_error_bound'] = error_bound
+            stats['generalization_error_bound_Rademacher'] = error_bound_Rademacher
+            logging.info('Epoch: {:07d}, Excess Risk: {:.6f}, Generalization Error Bound: {:.6f}, Generalization Error Bound (Rademacher): {:.6f}.'.format(
+                epoch+1, excess_risk, error_bound, error_bound_Rademacher))
+            excess_risk_list.append(excess_risk)
+            generalization_bound_list.append(error_bound)
+            generalization_bound_Rademacher_list.append(error_bound_Rademacher)
         # training
         running_loss = .0
         for data in train_loader:
@@ -495,9 +497,11 @@ with open(
 file_name = '../result_arrays/' + save_name_str
 if not args.load_only:
     np.save(file_name+'_generalization_bound.npy', np.array(generalization_bound_list))
+    np.save(file_name+'_generalization_bound_Rademacher.npy', np.array(generalization_bound_Rademacher_list))
     np.save(file_name+'_excess_risk.npy', np.array(excess_risk_list))
 
     logging.info('Finished Training')
 else:
     np.save(file_name+'_generalization_bound.npy', np.array(generalization_bound_list))
+    np.save(file_name+'_generalization_bound_Rademacher.npy', np.array(generalization_bound_Rademacher_list))
     np.save(file_name+'_excess_risk.npy', np.array(excess_risk_list))
