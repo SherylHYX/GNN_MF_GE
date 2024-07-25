@@ -22,7 +22,7 @@ class GCN(nn.Module):
 
         self.conv_layer = GCNConv(self.input_dim, self.hidden_dim, bias=False).to(self.device)
 
-        self.wl = GCNConv(self.hidden_dim, 1, bias=False).to(self.device) # change to 1D output
+        self.wl = torch.nn.Linear(self.hidden_dim, 1, bias=False).to(self.device) # change to 1D output
         if pooling_method == 'mean':
             self.pooling = global_mean_pool
         elif pooling_method == 'max':
@@ -36,7 +36,7 @@ class GCN(nn.Module):
         return loss_val
     
     def mean_pooling_generalization_bound(self, alpha):
-        w_m = self.wl.lin.weight.max(dim=1)[0]
+        w_m = self.wl.weight.max(dim=1)[0]
         w_1 = self.conv_layer.lin.weight.norm(dim=1).max()
         M_phi = w_m * self.max_feat_norm * w_1
         M_phi = torch.min(M_phi, w_m)
@@ -44,7 +44,7 @@ class GCN(nn.Module):
         return bound
 
     def sum_pooling_generalization_bound(self, alpha):
-        w_m = self.wl.lin.weight.max(dim=1)[0]
+        w_m = self.wl.weight.max(dim=1)[0]
         w_1 = self.conv_layer.lin.weight.norm(dim=1).max()
         M_phi = w_m * self.max_feat_norm * w_1 * self.N_max
         M_phi = torch.min(M_phi, w_m * self.N_max)
@@ -52,7 +52,7 @@ class GCN(nn.Module):
         return bound
 
     def Rademacher_mean_pooling_generalization_bound(self, alpha, max_node_degree, delta=0.05):
-        w_m = self.wl.lin.weight.max(dim=1)[0]
+        w_m = self.wl.weight.max(dim=1)[0]
         w_1 = self.conv_layer.lin.weight.norm(dim=1).max()
         M_l = torch.log(1 + torch.exp(w_m))
         M_phi = w_m * self.max_feat_norm * np.sqrt(max_node_degree+1) * w_1
@@ -61,7 +61,7 @@ class GCN(nn.Module):
         return bound
 
     def Rademacher_sum_pooling_generalization_bound(self, alpha, max_node_degree, delta=0.05):
-        w_m = self.wl.lin.weight.max(dim=1)[0]
+        w_m = self.wl.weight.max(dim=1)[0]
         w_1 = self.conv_layer.lin.weight.norm(dim=1).max()
         M_l = torch.log(1 + torch.exp(w_m))
         M_phi = w_m * self.max_feat_norm * np.sqrt(max_node_degree+1) * w_1 * self.N_max
@@ -73,7 +73,7 @@ class GCN(nn.Module):
         x = self.conv_layer(x, edge_index)
         x = x.tanh()
 
-        x = self.wl(x, edge_index)/self.hidden_dim
+        x = self.wl(x)/self.hidden_dim
         pooled = self.pooling(x, batch).flatten()
 
         return self.loss_func(pooled, label)
@@ -92,9 +92,9 @@ class GCN_RW(nn.Module):
         self.margin = margin
         self.device = device
 
-        self.conv_layer = GCNConv(self.input_dim, self.hidden_dim, bias=False).to(self.device)
+        self.conv_layer = GCN_RWConv(self.input_dim, self.hidden_dim, bias=False).to(self.device)
 
-        self.wl = GCN_RWConv(self.hidden_dim, 1, bias=False).to(self.device) # change to 1D output
+        self.wl = torch.nn.Linear(self.hidden_dim, 1, bias=False).to(self.device) # change to 1D output
         if pooling_method == 'mean':
             self.pooling = global_mean_pool
         elif pooling_method == 'max':
@@ -108,7 +108,7 @@ class GCN_RW(nn.Module):
         return loss_val
     
     def mean_pooling_generalization_bound(self, alpha):
-        w_m = self.wl.lin.weight.max(dim=1)[0]
+        w_m = self.wl.weight.max(dim=1)[0]
         w_1 = self.conv_layer.lin.weight.norm(dim=1).max()
         M_phi = w_m * self.max_feat_norm * w_1
         M_phi = torch.min(M_phi, w_m)
@@ -116,7 +116,7 @@ class GCN_RW(nn.Module):
         return bound
 
     def sum_pooling_generalization_bound(self, alpha):
-        w_m = self.wl.lin.weight.max(dim=1)[0]
+        w_m = self.wl.weight.max(dim=1)[0]
         w_1 = self.conv_layer.lin.weight.norm(dim=1).max()
         M_phi = w_m * self.max_feat_norm * w_1 * self.N_max
         M_phi = torch.min(M_phi, w_m * self.N_max)
@@ -124,7 +124,7 @@ class GCN_RW(nn.Module):
         return bound
 
     def Rademacher_mean_pooling_generalization_bound(self, alpha, max_node_degree, delta=0.05):
-        w_m = self.wl.lin.weight.max(dim=1)[0]
+        w_m = self.wl.weight.max(dim=1)[0]
         w_1 = self.conv_layer.lin.weight.norm(dim=1).max()
         M_l = torch.log(1 + torch.exp(w_m))
         M_phi = w_m * self.max_feat_norm * np.sqrt(max_node_degree+1) * w_1
@@ -133,7 +133,7 @@ class GCN_RW(nn.Module):
         return bound
 
     def Rademacher_sum_pooling_generalization_bound(self, alpha, max_node_degree, delta=0.05):
-        w_m = self.wl.lin.weight.max(dim=1)[0]
+        w_m = self.wl.weight.max(dim=1)[0]
         w_1 = self.conv_layer.lin.weight.norm(dim=1).max()
         M_l = torch.log(1 + torch.exp(w_m))
         M_phi = w_m * self.max_feat_norm * np.sqrt(max_node_degree+1) * w_1 * self.N_max
@@ -145,7 +145,7 @@ class GCN_RW(nn.Module):
         x = self.conv_layer(x, edge_index)
         x = x.tanh()
 
-        x = self.wl(x, edge_index)/self.hidden_dim
+        x = self.wl(x)/self.hidden_dim
         pooled = self.pooling(x, batch).flatten()
 
         return self.loss_func(pooled, label)
