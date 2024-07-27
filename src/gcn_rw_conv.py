@@ -4,7 +4,6 @@ import torch
 from torch import Tensor
 from torch.nn import Parameter
 
-import torch_sparse
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn.dense.linear import Linear
 from torch_geometric.nn.inits import zeros
@@ -12,10 +11,10 @@ from torch_geometric.typing import (
     Adj,
     OptPairTensor,
     OptTensor,
-    SparseTensor
+    SparseTensor,
+    torch_sparse
 )
-from torch_geometric.utils import add_remaining_self_loops
-from torch_scatter import scatter_add
+from torch_geometric.utils import add_remaining_self_loops, scatter
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 
 
@@ -68,7 +67,7 @@ def gcn_rw_norm(edge_index, edge_weight=None, num_nodes=None, improved=False,
 
     row, col = edge_index[0], edge_index[1]
     idx = col if flow == 'source_to_target' else row
-    deg = scatter_add(edge_weight, idx, dim=0, dim_size=num_nodes)
+    deg = scatter(edge_weight, idx, dim=0, dim_size=num_nodes, reduce='sum')
     deg_inv = deg.pow_(-1)
     deg_inv.masked_fill_(deg_inv == float('inf'), 0)
     edge_weight = deg_inv[row] * edge_weight
