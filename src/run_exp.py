@@ -388,8 +388,8 @@ if args.load_only:
     generalization_bound_Rademacher_list.append(error_bound_Rademacher)
 else:
     for epoch in range(args.max_epoch):  # loop over the dataset multiple times
-        if args.model_type[:3] == 'GCN':
-            if (epoch+1) % 10 == 0: # excess risk and bounds
+        if (epoch+1) % 10 == 0: # excess risk and bounds
+            if args.model_type[:3] == 'GCN':
                 train_logit = []
                 for data in train_loader:
                     logit = model(data.x.to(device),
@@ -409,8 +409,7 @@ else:
                                     data.label.to(device))
 
                     test_logit += [logit.cpu().data.numpy()]
-        elif args.model_type == 'MPGNN':
-            if (epoch+1) % 10 == 0:
+            elif args.model_type == 'MPGNN':
                 train_logit = []
                 for data in train_loader:
                     logit = model(
